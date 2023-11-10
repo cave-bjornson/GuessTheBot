@@ -1,0 +1,11 @@
+version: "3.8"
+services:
+  app:
+    build: .
+    image: python-guess_the_bot
+    volumes:
+      - gtb:/app/db
+    stdin_open: true
+    tty: true
+volumes:
+  gtb:
