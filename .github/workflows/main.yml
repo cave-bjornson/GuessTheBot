@@ -39,3 +39,7 @@ jobs:
             secure-environment-variables: TOKEN=${{ secrets.DISCORD_TOKEN }} KEY=${{ secrets.FERNET_KEY }}
             log-analytics-workspace: ${{ secrets.LAW_WORKSPACE_ID }}
             log-analytics-workspace-key: ${{ secrets.LAW_WORKSPACE_KEY }}
+            azure-file-volume-account-name: ${{ secrets.STORAGE_ACC_NAME }}
+            azure-file-volume-account-key: ${{ secrets.STORAGE_ACC_KEY }}
+            azure-file-volume-share-name: ${{ secrets.FILESHARE_NAME }}
+            azure-file-volume-mount-path: /app/db
