@@ -29,7 +29,7 @@ class GuesserDB(ezcord.DBHandler):
         )
 
     async def setup(self):
-        async with aiosqlite.connect(Path(os.getenv("DB_URL"))) as db:
+        async with aiosqlite.connect(self.DB) as db:
             await db.executescript(open(Path("db/guesser_db.sql")).read())
 
     async def get_player(self, discord_id: int) -> Player:
@@ -69,13 +69,7 @@ def player_factory(cursor, row):
 
 
 async def main():
-    gdb = GuesserDB()
-    await gdb.setup()
-    # players = await gdb.get_all_players()
-    await gdb.insert_player(424518280305180675)
-    # p = await gdb.get_player(1234)
-    # for p in players:
-    #     print(p.model_dump())
+    pass
 
 
 if __name__ == "__main__":
