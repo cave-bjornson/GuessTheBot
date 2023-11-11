@@ -35,5 +35,7 @@ jobs:
             registry-password: ${{ secrets.REGISTRY_PASSWORD }}
             name: guessthebot-aci
             location: 'sweden central'
-            environment-variables: DB_URL=db/app.db TOKEN=ODA4MzQ0Mzg4MDk0NTI1NDky.GDFYBp.82pjkXENGlfwmW8bhPMDDjQ9Vyuo376tpO2Ezo KEY=cNXCDpy9GYW-OwYPZPX4R_rck4gCHhCjPrAbowibZKA=
-            #secure-environment-variables: TOKEN=${{ secrets.DISCORD_TOKEN }} KEY=${{ secrets.FERNET_KEY }}
+            environment-variables: DB_URL=db/app.db
+            secure-environment-variables: TOKEN=${{ secrets.DISCORD_TOKEN }} KEY=${{ secrets.FERNET_KEY }}
+            log-analytics-workspace: ${{ secrets.LAW_WORKSPACE_ID }}
+            log-analytics-workspace-key: ${{ secrets.LAW_WORKSPACE_KEY }}
