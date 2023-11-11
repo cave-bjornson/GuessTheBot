@@ -4,7 +4,7 @@ services:
     build: .
     image: python-guess_the_bot
     volumes:
-      - gtb:/app/db
+      - gtb:/app/data
     stdin_open: true
     tty: true
 volumes:

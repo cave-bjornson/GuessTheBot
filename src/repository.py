@@ -30,7 +30,7 @@ class GuesserDB(ezcord.DBHandler):
 
     async def setup(self):
         async with aiosqlite.connect(self.DB) as db:
-            await db.executescript(open(Path("db/guesser_db.sql")).read())
+            await db.executescript(open(Path("data/guesser_db.sql")).read())
 
     async def get_player(self, discord_id: int) -> Player:
         id_hash = self.hash_id(discord_id)
