@@ -1,5 +1,6 @@
 on:
     push:
+    pull_request:
         branches:
             - main
     workflow_dispatch:
@@ -40,8 +41,8 @@ jobs:
             registry-password: ${{ secrets.REGISTRY_PASSWORD }}
             name: guessthebot-aci
             location: 'sweden central'
-            environment-variables: DB_URL=data/app.db
-            secure-environment-variables: TOKEN=${{ secrets.DISCORD_TOKEN }} KEY=${{ secrets.FERNET_KEY }}
+            environment-variables: DB_FILE=app.db
+            secure-environment-variables: TOKEN=${{ secrets.DISCORD_TOKEN }} KEY=${{ secrets.FERNET_KEY } GTG_CHANNEL_ID=${{ secrets.GTG_CHANNEL_ID }}
             log-analytics-workspace: ${{ secrets.LAW_WORKSPACE_ID }}
             log-analytics-workspace-key: ${{ secrets.LAW_WORKSPACE_KEY }}
             azure-file-volume-account-name: ${{ secrets.STORAGE_ACC_NAME }}
