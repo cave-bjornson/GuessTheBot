@@ -1,7 +1,9 @@
-py-cord~=2.4.1
-ezcord~=0.4.0
 pydantic~=2.4.2
 cryptography~=41.0.5
 click~=8.1.7
 python-dotenv~=1.0.0
-aiosqlite~=0.19.0
+rootpath~=0.1.1
+pony~=0.7.17
+hikari[speedups]~=2.0.0.dev121
+loguru~=0.7.2
+pytz~=2023.3.post1
