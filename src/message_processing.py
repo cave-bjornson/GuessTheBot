@@ -64,7 +64,7 @@ def process_game(
     process_result = ProcessResult()
 
     if not repository.player_exists(author_id):
-        repository.add_player(author_id)
+        repository.add_player(author_id, join_date=submit_time.date())
         process_result.player_added = True
 
     post_date = gtg_first_date + timedelta(days=(int(result.game_identifier) - 1))
