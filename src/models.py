@@ -6,9 +6,8 @@ from typing import Optional
 import pony.orm
 import rootpath
 from dotenv import load_dotenv
-from pony.orm import Database, PrimaryKey, Required, Set
-from pydantic import BaseModel, ConfigDict, AfterValidator
-from typing_extensions import Annotated
+from pony.orm import Database, PrimaryKey, Required, Set, set_sql_debug, db_session
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -21,15 +20,8 @@ db = Database(
 )
 
 
-def check_guesses(v: int) -> int:
-    assert 1 <= v <= 6, f"guesses {v} should be between 1 and 6"
-    return v
-
-
 class PlayerDto(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    discord_id: Optional[int] = None
+    user_id: int
     join_date: date
     active: bool
     visible: bool
@@ -37,9 +29,8 @@ class PlayerDto(BaseModel):
 
 class Player(db.Entity):
     id = PrimaryKey(int, auto=True)
-    join_date = Required(date)
-    discord_id_hash = Required(str, unique=True)
-    discord_id_encrypted = Required(bytes)
+    user_snowflake = Required(int, unique=True, size=64)
+    join_datetime = Required(datetime)
     active = Required(bool, default=True)
     visible = Required(bool, default=True)
     results = Set("Result")
@@ -47,6 +38,7 @@ class Player(db.Entity):
 
 class GameType(db.Entity):
     id = PrimaryKey(int, auto=True)
+    identifier = Required(str, unique=True)
     name = Required(str, unique=True)
     publish_date = Required(date)
     games = Set("Game")
@@ -57,35 +49,32 @@ class Game(db.Entity):
     game_type = Required(GameType)
     identifier = Required(str, unique=True)
     title = pony.orm.Optional(str)
-    post_date = Required(date)
+    publish_date = Required(date)
     results = Set("Result")
 
 
 class Result(db.Entity):
     id = PrimaryKey(int, auto=True)
+    message_snowflake = Required(int, size=64)
     player = Required(Player)
     game = Required(Game)
     submit_time = Required(datetime)
     guesses = Required(int)
 
 
-GuessNumber = Annotated[int, AfterValidator(check_guesses)]
-
-
 class ResultDto(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    guesses: GuessNumber
-    player_discord_id: Optional[int] = None
-    game_type_name: Optional[str] = None
-    game_identifier: Optional[str] = None
     submit_time: datetime
-    guesses: int
+    message_id: int
+    user_id: int
+    game_type_name: str
+    game_identifier: str
     game_title: Optional[str] = None
+    guesses: Optional[int] = None
+    won: bool
 
 
 class PlayerTotal(BaseModel):
-    discord_id: int
+    user_id: int
     played_games: int
     won: int
     win_rate: str
@@ -94,7 +83,22 @@ class PlayerTotal(BaseModel):
     max_loosing_streak: int
 
 
-# if os.getenv("ENVIRONMENT") == "dev":
-#     set_sql_debug(debug=True)
+if os.getenv("ENVIRONMENT") == "dev":
+    set_sql_debug(debug=True)
 
 db.generate_mapping(check_tables=True, create_tables=True)
+
+
+@db_session
+def populate_database():
+    GameType(
+        identifier="gtg",
+        name="GuessThe.Game",
+        publish_date=date(year=2022, month=5, day=15),
+    )
+
+
+if __name__ == "__main__":
+    with db_session:
+        if GameType.select().first() is None:
+            populate_database()

@@ -1,5 +1,4 @@
 pydantic~=2.4.2
-cryptography~=41.0.5
 click~=8.1.7
 python-dotenv~=1.0.0
 rootpath~=0.1.1
@@ -7,3 +6,4 @@ pony~=0.7.17
 hikari[speedups]~=2.0.0.dev121
 loguru~=0.7.2
 pytz~=2023.3.post1
+snowflake-util~=1.0.0b6

@@ -1,6 +1,6 @@
 from hikari import Intents, GuildMessageCreateEvent
 from loguru import logger
-from src.message_processing import process_game
+from src.message_processing import process_message
 import dotenv
 import hikari
 import os
@@ -29,12 +29,10 @@ async def on_message_create(event: GuildMessageCreateEvent) -> None:
     if msg.content is None:
         return
 
-    time_stamp = msg.timestamp.astimezone()
-
-    process_game(
+    process_message(
         message_content=msg.content,
-        submit_time=time_stamp,
-        author_id=event.author_id,
+        message_id=int(msg.id),
+        author_id=int(msg.author.id),
     )
 
 
