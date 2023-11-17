@@ -81,6 +81,7 @@ class PlayerTotal(BaseModel):
     current_streak: int
     max_streak: int
     max_loosing_streak: int
+    join_date: datetime
 
 
 if os.getenv("ENVIRONMENT") == "dev":

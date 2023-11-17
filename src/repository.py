@@ -4,7 +4,7 @@ from datetime import date
 import snowflake
 from dotenv import load_dotenv
 from loguru import logger
-from pony.orm import db_session, Database, exists, count
+from pony.orm import db_session, Database, exists, count, select
 
 from src.models import Player, PlayerDto, Game, GameType, Result, ResultDto, PlayerTotal
 
@@ -111,14 +111,18 @@ def get_all_results():
     return results
 
 
-def get_player_total(user_id: int, game_type_identifier: str = "gtg"):
+def get_player_total(
+    user_id: int, game_type_identifier: str = "gtg"
+) -> PlayerTotal | None:
+    user_id = int(user_id)
     with db_session:
         results = Result.select(
             lambda r: r.player.user_snowflake == user_id
             and r.game.game_type.identifier == game_type_identifier
         ).order_by(Result.submit_time)
 
-        logger.debug(count(results))
+        if not results.first():
+            return None
 
         played_games = 0
         won = 0
@@ -143,6 +147,8 @@ def get_player_total(user_id: int, game_type_identifier: str = "gtg"):
 
         win_rate = f"{won / played_games:.2%}"
 
+        join_date_res = select(p.join_datetime for p in Player)
+
         total = PlayerTotal(
             user_id=user_id,
             played_games=played_games,
@@ -151,6 +157,7 @@ def get_player_total(user_id: int, game_type_identifier: str = "gtg"):
             current_streak=current_streak,
             max_streak=max_streak,
             max_loosing_streak=max_loosing_streak,
+            join_date=join_date_res.first(),
         )
 
     return total
