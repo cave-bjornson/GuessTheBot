@@ -3,14 +3,14 @@ from dataclasses import dataclass
 from datetime import date, timedelta, datetime
 from typing import NamedTuple
 
+from hikari import Message
 from loguru import logger
 
 from src import repository
-from src.models import check_guesses
 from src.repository import game_exists
 
 gtg_pattern = re.compile(
-    r"(?P<tag>[#🔍].*GuessTheGame)?[.\s]*#(?P<id>\d+)?[.\s]*(🎮\s*(?P<score>(\s*[🟥🟩🟨](\s*[🟥🟩🟨⬜⬛]){5})))",
+    r"(?P<tag>[#🔍].*GuessTheGame)?[.\s]*(?P<id_group>#(?P<id>\d+))?[.\s]*(?P<score_group>🎮\s*(?P<score>(\s*[🟥🟩🟨](\s*[🟥🟩🟨⬜⬛]){5})))",
     flags=(re.DOTALL and re.IGNORECASE),
 )
 
@@ -44,9 +44,7 @@ def get_gtg_result(msg_content: str, submit_date: date) -> PatternResult | None:
 
     score_str = re.sub(r"\s", "", res.group("score"))
     err_val = score_str.find("🟩")
-    guesses = err_val + 1 if err_val >= 0 else 6
-
-    check_guesses(guesses)
+    guesses = err_val + 1
 
     logger.debug(
         f"Pattern for GuessThe.Game found with identifier {id_string} with {guesses} guesses"
@@ -54,34 +52,42 @@ def get_gtg_result(msg_content: str, submit_date: date) -> PatternResult | None:
     return PatternResult(game_identifier=id_string, guesses=guesses)
 
 
-def process_game(
-    message_content: str, submit_time: datetime, author_id: int
+def process_message(
+    message_content: str,
+    message_id: int,
+    author_id: int,
 ) -> ProcessResult | None:
-    result = get_gtg_result(message_content, submit_time.date())
+    result = get_gtg_result(
+        message_content, repository.snowflake_to_datetime(message_id).date()
+    )
     if not result:
         return
 
     process_result = ProcessResult()
 
     if not repository.player_exists(author_id):
-        repository.add_player(author_id)
+        repository.add_player(user_id=author_id, message_id=message_id)
         process_result.player_added = True
 
     post_date = gtg_first_date + timedelta(days=(int(result.game_identifier) - 1))
 
     if not game_exists(result.game_identifier):
-        repository.add_game("GuessThe.Game", result.game_identifier, post_date)
+        repository.add_game(
+            game_type_identifier="gtg",
+            game_identifier=result.game_identifier,
+            publish_date=post_date,
+        )
         process_result.game_added = True
 
     if repository.result_exists(
-        discord_id=author_id, game_identifier=result.game_identifier
+        user_id=author_id, game_identifier=result.game_identifier
     ):
         return process_result
 
     repository.add_result(
-        discord_id=author_id,
+        user_id=author_id,
+        message_id=message_id,
         game_identifier=result.game_identifier,
-        submit_time=submit_time,
         guesses=result.guesses,
     )
 

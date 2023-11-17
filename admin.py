@@ -1,17 +1,19 @@
 import asyncio
-import datetime
 import functools
 import os
 from contextlib import asynccontextmanager
-
+from datetime import datetime
+from loguru import logger
 import click
 import hikari
 import pytz
 from dotenv import load_dotenv
 from hikari.impl import RESTClientImpl
+from pydantic import BaseModel
 
 from src import repository
-from src.message_processing import process_game
+from src.message_processing import process_message
+from src.repository import snowflake_to_datetime
 
 load_dotenv()
 token = os.getenv("TOKEN")
@@ -45,82 +47,137 @@ async def cli():
 
 
 @cli.command()
-@click.argument("discord_id")
-@click.option("-n", "--name", is_flag=True)
 @make_sync
-async def get_player(discord_id, name):
-    p = repository.get_player(discord_id=int(discord_id))
-    u = None
-    if name:
-        async with get_client() as client:
-            u = await client.fetch_user(p.discord_id)
-
-    print(f"{p} Name={u.global_name if u else 'excluded'}")
-
-
-@cli.command()
-@click.option("-n", "--name", is_flag=True)
-@make_sync
-async def players(name):
-    """List all players"""
-    print("Players:")
-    async with get_client() as client:
+@click.argument("user_id", required=False)
+@click.option("-n", "--name", help="Fetch and display discord username", is_flag=True)
+async def players(user_id, name):
+    """Outputs one player if DISCORD_ID provided, else all players"""
+    if user_id:
+        click.echo("Player:")
+        p = repository.get_player(user_id=int(user_id))
+        await print_model(model=p, user_id=user_id, name=name)
+    else:
+        click.echo("Players:")
         for p in repository.get_all_players():
-            u = None
-            if name:
-                u = await client.fetch_user(p.discord_id)
-
-            print(f"{p} Name={u.global_name if u else 'excluded'}")
+            await print_model(model=p, user_id=p.user_id, name=name)
 
 
 @cli.command()
-@click.argument("discord_id")
 @make_sync
-async def add_player(discord_id):
-    repository.add_player(discord_id=discord_id)
+@click.argument("user_id")
+@click.argument("message_id")
+async def add_player(user_id, message_id):
+    repository.add_player(user_id=user_id, message_id=message_id)
 
 
 @cli.command()
 @make_sync
 async def results():
-    print("Results:")
+    click.echo("Results:")
     for r in repository.get_all_results():
-        print(r)
+        click.echo(r)
 
 
-@cli.command()
-@click.argument("discord_id")
+@cli.command(name="stats")
 @make_sync
-async def player_total(discord_id):
-    print("Player Total:")
-    print(repository.get_player_total(discord_id))
+@click.argument("user_id", required=True)
+@click.option("-n", "--name", help="Fetch and display discord username", is_flag=True)
+async def player_stats(user_id, name):
+    click.echo("Player Stats:")
+    stats = repository.get_player_total(user_id)
+    await print_model(model=stats, user_id=user_id, name=name)
 
 
-@cli.command()
+@cli.command(name="message")
 @make_sync
-@click.option("-f", "--from-date", default=datetime.date.today(), show_default=True)
-@click.option("-t", "--to-date", default=datetime.date.today(), show_default=True)
+@click.argument("message", required=True)
 @click.option(
     "-c",
     "--channel",
     type=int,
-    default=int(os.environ["GTG_CHANNEL_ID"]),
+    envvar="GTG_CHANNEL_ID",
     show_default=True,
 )
-async def collect_channel_history(from_date, to_date, channel):
-    """Collects channel history. defaults to today. Dates are inclusive."""
-    fd = datetime.datetime.combine(
-        datetime.date.fromisoformat(from_date),
-        datetime.time.min,
+@click.option("-p", "--process", is_flag=True)
+async def fetch_message(channel: int, message: int, process):
+    click.echo("Message:")
+    async with get_client() as client:
+        msg = await client.fetch_message(channel=channel, message=message)
+
+    click.echo(
+        f"msg-id: {msg.id} msg-timestamp: {msg.timestamp.astimezone()} msg-author-id: {msg.author.id}"
     )
-    td = datetime.datetime.combine(
-        datetime.date.fromisoformat(to_date),
-        datetime.time.max,
-    )
-    fd = fd.astimezone(utc)
-    td = td.astimezone(utc)
+    click.echo(msg.content)
+
+    if process:
+        res = process_message(
+            message_content=msg.content,
+            message_id=int(msg.id),
+            author_id=int(msg.author.id),
+        )
+
+        if res:
+            match = True
+
+            click.echo(
+                f"{int(match)}, matches found, {int(res.player_added)} players added,"
+                f"{int(res.game_added)} games added, {int(res.result_added)} results added."
+            )
+        else:
+            click.echo("No matches found")
+
+
+@cli.command("channel-history")
+@make_sync
+@click.option(
+    "-ft",
+    "--from-type",
+    type=click.Choice(["snowflake", "datetime"]),
+    required=True,
+    default="snowflake",
+)
+@click.argument("from-val", type=str)
+@click.option(
+    "-tt",
+    "--to-type",
+    type=click.Choice(["snowflake", "datetime"]),
+    required=True,
+    default="snowflake",
+)
+@click.argument("to-val", type=str, required=False)
+@click.option(
+    "-c",
+    "--channel",
+    type=int,
+    envvar="GTG_CHANNEL_ID",
+    show_default=True,
+)
+async def collect_channel_history(from_type, from_val, to_type, to_val, channel):
+    """Collects channel history from message snowflake or datetime values."""
+
+    def parse_val(point_type, val: str) -> int | datetime:
+        click_datetime_converter = click.DateTime()
+        if point_type == "datetime":
+            return click_datetime_converter(val).astimezone()
+        else:
+            return int(val)
+
+    def point_to_datetime(point_type, val) -> datetime:
+        if point_type == "datetime":
+            return val
+        else:
+            return snowflake_to_datetime(val)
+
+    from_point = parse_val(from_type, from_val)
+
+    to_datetime = None
+    # will stop after time even if last message id not found
+    if to_val:
+        to_datetime = point_to_datetime(to_type, parse_val(to_type, to_val))
+
     first_msg_timestamp = None
     last_msg_timestamp = None
+
     message_count = 0
     match_count = 0
     player_add_count = 0
@@ -129,28 +186,36 @@ async def collect_channel_history(from_date, to_date, channel):
 
     async with get_client() as client:
         c = await client.fetch_channel(channel)
-        fd = c.created_at if fd < c.created_at else fd
-        print(f"Collecting results between {fd} and {td}")
+        # prevents attempts to read messages earlier than channel creation date
+        if from_type == "datetime" and from_point < c.created_at:
+            from_point = c.created_at
+
+        click.echo(
+            f"Collecting results in channel {channel} between {point_to_datetime(point_type=from_type, val=from_point).astimezone()}"
+            f" and {to_datetime.astimezone() if to_datetime else 'end of channel history.'}"
+        )
         for msg in await c.fetch_history(
-            after=fd,
+            after=from_point,
         ):
+            logger.debug(to_datetime)
+            logger.debug(msg.timestamp.astimezone())
+
+            if to_datetime and msg.timestamp > to_datetime.astimezone():
+                break
+
             if msg.author.is_bot or msg.author.is_system or msg.content is None:
                 continue
 
-            time_stamp = msg.timestamp.astimezone()
             if not first_msg_timestamp:
-                first_msg_timestamp = time_stamp
+                first_msg_timestamp = msg.timestamp
 
-            last_msg_timestamp = time_stamp
-
-            if msg.timestamp > td:
-                break
+            last_msg_timestamp = msg.timestamp
 
             message_count += 1
-            res = process_game(
+            res = process_message(
                 message_content=msg.content,
-                submit_time=time_stamp,
-                author_id=msg.author.id,
+                message_id=int(msg.id),
+                author_id=int(msg.author.id),
             )
             if res:
                 match_count += 1
@@ -158,13 +223,40 @@ async def collect_channel_history(from_date, to_date, channel):
                 game_add_count += res.game_added
                 result_add_count += res.result_added
 
-    print(
-        f"{message_count} messages read, {match_count}, matches found, {player_add_count} players added,"
-        f"{game_add_count} games added, {result_add_count} results added."
-    )
-    print(
-        f"First message timestamp: {first_msg_timestamp}, Last message timestamp: {last_msg_timestamp}"
-    )
+    if first_msg_timestamp:
+        click.echo(
+            f"{message_count} messages read, {match_count}, matches found, {player_add_count} players added,"
+            f"{game_add_count} games added, {result_add_count} results added."
+        )
+        click.echo(
+            f"First message timestamp: {first_msg_timestamp.astimezone()}, Last message timestamp: {last_msg_timestamp.astimezone()}"
+        )
+    else:
+        click.echo("No messages read")
+
+
+async def get_discord_name(user_id: int):
+    async with get_client() as client:
+        u = await client.fetch_user(user_id)
+
+    return u.global_name
+
+
+async def get_discord_member_name(
+    user_id: int, server_id: int = int(os.getenv("SERVER_ID"))
+):
+    async with get_client() as client:
+        m = await client.fetch_member(guild=server_id, user=user_id)
+
+    return m.display_name
+
+
+async def print_model(model: BaseModel, user_id: int, name: bool = False):
+    user_name = None
+    if name:
+        user_name = await get_discord_member_name(user_id)
+
+    click.echo(f"Name={user_name or 'excluded'} {model.model_dump_json()}")
 
 
 if __name__ == "__main__":

@@ -1,36 +1,29 @@
 import asyncio
-import hashlib
-import os
-from datetime import date, datetime
+from datetime import date
 
-from cryptography.fernet import Fernet
+import snowflake
 from dotenv import load_dotenv
 from loguru import logger
-from pony.orm import db_session, select, Database, exists
+from pony.orm import db_session, Database, exists, count, select
 
 from src.models import Player, PlayerDto, Game, GameType, Result, ResultDto, PlayerTotal
 
 load_dotenv()
 
-fernet = Fernet(os.getenv("KEY").encode())
-
 db = Database()
 
 
-def hash_discord_id(discord_id: int) -> str:
-    return hashlib.sha256(str(discord_id).encode()).hexdigest()
+snow = snowflake.Snowflake()
 
 
 @db_session
-def player_exists(discord_id: int) -> bool:
-    d_id_hash = hash_discord_id(discord_id)
-    return Player.exists(discord_id_hash=d_id_hash)
+def player_exists(user_id: int) -> bool:
+    return Player.exists(user_snowflake=user_id)
 
 
-def get_player(discord_id: int) -> PlayerDto | None:
+def get_player(user_id: int) -> PlayerDto | None:
     with db_session:
-        d_id_hash = hash_discord_id(discord_id)
-        p: Player = Player.get(discord_id_hash=d_id_hash)
+        p: Player = Player.get(user_snowflake=user_id)
         if p:
             player = player_to_dto(p)
         else:
@@ -47,15 +40,12 @@ def get_all_players() -> list[PlayerDto]:
     return players
 
 
-def add_player(discord_id: int, join_date: date = date.today()):
+def add_player(user_id: int, message_id):
     with db_session:
-        d_id_hash = hash_discord_id(discord_id)
-        if not Player.exists(discord_id_hash=d_id_hash):
-            d_id_enc = fernet.encrypt(str(discord_id).encode())
+        if not Player.exists(user_snowflake=user_id):
             p = Player(
-                join_date=join_date,
-                discord_id_hash=d_id_hash,
-                discord_id_encrypted=d_id_enc,
+                user_snowflake=user_id,
+                join_datetime=snowflake_to_datetime(message_id),
             )
             p.flush()
             logger.debug("Player added with primary key {}.", p.id)
@@ -68,10 +58,10 @@ def game_exists(identifier: str) -> bool:
     return Game.exists(identifier=identifier)
 
 
-def add_game(game_type_name: str, identifier: str, post_date: date):
+def add_game(game_type_identifier: str, game_identifier: str, publish_date: date):
     with db_session:
-        gt = GameType.get(name=game_type_name)
-        g = Game(game_type=gt, identifier=identifier, post_date=post_date)
+        gt = GameType.get(identifier=game_type_identifier)
+        g = Game(game_type=gt, identifier=game_identifier, publish_date=publish_date)
         g.flush()
         logger.info(
             "Game of {} with identifier {} added with primary key {}.",
@@ -82,32 +72,33 @@ def add_game(game_type_name: str, identifier: str, post_date: date):
 
 
 @db_session
-def result_exists(discord_id: int, game_identifier: str):
-    d_id_hash = hash_discord_id(discord_id)
+def result_exists(user_id: int, game_identifier: str):
     return exists(
         r
         for r in Result
-        if r.player.discord_id_hash == d_id_hash
-        and r.game.identifier == game_identifier
+        if r.player.user_snowflake == user_id and r.game.identifier == game_identifier
     )
 
 
-def add_result(
-    discord_id: int, game_identifier: str, submit_time: datetime, guesses: int
-):
-    d_id_hash = hash_discord_id(discord_id)
+def add_result(user_id: int, message_id, game_identifier: str, guesses: int):
     with db_session:
-        p = Player.get(discord_id_hash=d_id_hash)
+        p = Player.get(user_snowflake=user_id)
         g = Game.get(identifier=game_identifier)
-        gametype_name = g.game_type.name
-        r = Result(player=p, game=g, submit_time=submit_time, guesses=guesses)
+        game_type_name = g.game_type.name
+        r = Result(
+            player=p,
+            game=g,
+            submit_time=snowflake_to_datetime(message_id),
+            guesses=guesses,
+            message_snowflake=message_id,
+        )
         r.flush()
         logger.info(
             "Result of {} guesses for {} with identifier {} with submit-time {} added with primary key {}.",
             guesses,
-            gametype_name,
+            game_type_name,
             g.identifier,
-            submit_time,
+            r.submit_time.astimezone(),
             r.id,
         )
 
@@ -120,19 +111,19 @@ def get_all_results():
     return results
 
 
-def get_player_total(discord_id: int, game_type_name: str = "GuessThe.Game"):
-    d_id_hash = hash_discord_id(discord_id)
+def get_player_total(
+    user_id: int, game_type_identifier: str = "gtg"
+) -> PlayerTotal | None:
+    user_id = int(user_id)
     with db_session:
-        player_encrypted_id = select(
-            p.discord_id_encrypted for p in Player if p.discord_id_hash == d_id_hash
-        )[:]
-
         results = Result.select(
-            lambda r: r.player.discord_id_hash == d_id_hash
-            and r.game.game_type.name == game_type_name
+            lambda r: r.player.user_snowflake == user_id
+            and r.game.game_type.identifier == game_type_identifier
         ).order_by(Result.submit_time)
 
-        decrypted_id = int(fernet.decrypt(player_encrypted_id[0]))
+        if not results.first():
+            return None
+
         played_games = 0
         won = 0
         current_streak = 0
@@ -142,7 +133,7 @@ def get_player_total(discord_id: int, game_type_name: str = "GuessThe.Game"):
 
         for res in results:
             played_games += 1
-            if res.guesses < 6:
+            if res.guesses != 0:
                 loosing_streak = 0
                 won += 1
                 current_streak += 1
@@ -156,31 +147,46 @@ def get_player_total(discord_id: int, game_type_name: str = "GuessThe.Game"):
 
         win_rate = f"{won / played_games:.2%}"
 
+        join_date_res = select(p.join_datetime for p in Player)
+
         total = PlayerTotal(
-            discord_id=decrypted_id,
+            user_id=user_id,
             played_games=played_games,
             won=won,
             win_rate=win_rate,
             current_streak=current_streak,
             max_streak=max_streak,
             max_loosing_streak=max_loosing_streak,
+            join_date=join_date_res.first(),
         )
 
     return total
 
 
 def player_to_dto(player: Player) -> PlayerDto:
-    p = PlayerDto.model_validate(player)
-    p.discord_id = int(fernet.decrypt(player.discord_id_encrypted))
-    return p
+    return PlayerDto(
+        user_id=player.user_snowflake,
+        join_date=player.join_datetime.astimezone().date(),
+        active=player.active,
+        visible=player.active,
+    )
 
 
 def result_to_dto(result: Result) -> ResultDto:
-    r = ResultDto.model_validate(result)
-    r.player_discord_id = int(fernet.decrypt(result.player.discord_id_encrypted))
-    r.game_type_name = result.game.game_type.name
-    r.game_identifier = result.game.identifier
-    return r
+    return ResultDto(
+        submit_time=result.submit_time.astimezone(),
+        message_id=result.message_snowflake,
+        user_id=result.player.user_snowflake,
+        game_type_name=result.game.game_type.name,
+        game_identifier=result.game.identifier,
+        won=result.guesses != 0,
+        guesses=result.guesses or None,
+    )
+
+
+def snowflake_to_datetime(snowflake_val: int):
+    snowflake_datetime, *_ = snow.parse_discord_snowflake(str(snowflake_val))
+    return snowflake_datetime
 
 
 async def main():

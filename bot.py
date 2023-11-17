@@ -1,6 +1,12 @@
+from textwrap import dedent
+from typing import Annotated
+
+import crescent
 from hikari import Intents, GuildMessageCreateEvent
 from loguru import logger
-from src.message_processing import process_game
+
+from src import repository
+from src.message_processing import process_message
 import dotenv
 import hikari
 import os
@@ -12,9 +18,33 @@ dotenv.load_dotenv()
 bot = hikari.GatewayBot(
     token=os.environ["TOKEN"], intents=Intents.ALL_MESSAGES | Intents.MESSAGE_CONTENT
 )
+client = crescent.Client(bot)
 
 
-@bot.listen()
+@client.include
+@crescent.command
+async def gtb(ctx: crescent.Context) -> None:
+    pt = repository.get_player_total(ctx.member.id, "gtg")
+    if pt:
+        msg = f"""\
+            ### Stats för *{ctx.member.display_name}*:
+            🔍 Spel: 🎮 GuessThe.Game
+            🤔 Spelade: {pt.played_games}
+            🥳 Vunna: {pt.won}
+            🧮 Ratio: {pt.win_rate}
+            🟨 Nuvarande streak: {pt.current_streak}
+            🟩 Bästa streak: {pt.max_streak}
+            🟥 Värsta Streak: {pt.max_loosing_streak}
+            📅 Första spel: {pt.join_date.strftime("%y-%m-%d")}
+            """
+    else:
+        msg = "Hittar inga stats för dig, sry!."
+
+    await ctx.respond(dedent(msg))
+
+
+@client.include()
+@crescent.event
 async def on_message_create(event: GuildMessageCreateEvent) -> None:
     if event.channel_id != int(os.environ["GTG_CHANNEL_ID"]):
         return
@@ -29,12 +59,10 @@ async def on_message_create(event: GuildMessageCreateEvent) -> None:
     if msg.content is None:
         return
 
-    time_stamp = msg.timestamp.astimezone()
-
-    process_game(
+    process_message(
         message_content=msg.content,
-        submit_time=time_stamp,
-        author_id=event.author_id,
+        message_id=int(msg.id),
+        author_id=int(msg.author.id),
     )
 
 
