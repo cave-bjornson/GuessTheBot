@@ -1,17 +1,18 @@
 import asyncio
-from datetime import date
+from datetime import date, datetime
+from enum import StrEnum
 
 import snowflake
 from dotenv import load_dotenv
 from loguru import logger
-from pony.orm import db_session, Database, exists, count, select
+from pony.orm import db_session, Database, exists, count, select, commit, flush
 
 from src.models import Player, PlayerDto, Game, GameType, Result, ResultDto, PlayerTotal
+from src.utils import Participation
 
 load_dotenv()
 
 db = Database()
-
 
 snow = snowflake.Snowflake()
 
@@ -51,6 +52,42 @@ def add_player(user_id: int, message_id):
             logger.debug("Player added with primary key {}.", p.id)
         else:
             logger.warning("Attempt to add existing player")
+
+
+def update_player(
+    user_id: int,
+    visibility: bool = None,
+    active: bool = None,
+    join_datetime: datetime = None,
+) -> PlayerDto:
+    with db_session:
+        p = Player.get(user_snowflake=user_id)
+        if visibility is not None:
+            p.visible = visibility
+
+        if active is not None:
+            p.active = active
+
+        if join_datetime is not None:
+            p.join_datetime = join_datetime
+
+        updated_player = player_to_dto(p)
+        logger.debug("Player with primary key {} updated.", p.id)
+
+    return updated_player
+
+
+def get_participation_value(user_id, participation_type: Participation):
+    with db_session:
+        logger.debug(participation_type)
+        pq = select(
+            getattr(p, participation_type)
+            for p in Player
+            if p.user_snowflake == user_id
+        )
+        p_val = pq.first()
+
+    return p_val
 
 
 @db_session
@@ -171,7 +208,7 @@ def player_to_dto(player: Player) -> PlayerDto:
         user_id=player.user_snowflake,
         join_date=player.join_datetime.astimezone().date(),
         active=player.active,
-        visible=player.active,
+        visible=player.visible,
     )
 
 
@@ -198,3 +235,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+class Participation:
+    pass
