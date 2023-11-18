@@ -72,9 +72,11 @@ async def add_player(user_id, message_id):
 
 @cli.command()
 @make_sync
-async def results():
+@click.argument("user_id", type=int, required=False)
+@click.option("-l", "--limit", type=int)
+async def results(user_id: int, limit: int):
     click.echo("Results:")
-    for r in repository.get_all_results():
+    for r in repository.get_all_results(user_id=user_id, limit=limit):
         click.echo(r)
 
 
