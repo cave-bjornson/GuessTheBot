@@ -103,10 +103,11 @@ def add_result(user_id: int, message_id, game_identifier: str, guesses: int):
         )
 
 
-@db_session
-def get_all_results():
-    query = Result.select().order_by(Result.submit_time)
-    results = list(map(result_to_dto, query))
+def get_all_results(limit: int, user_id: int = None):
+    sel = (lambda r: r.player.user_snowflake == user_id) if user_id else lambda x: x
+    with db_session:
+        query = Result.select(sel).order_by(Result.submit_time).limit(limit)
+        results = list(map(result_to_dto, query))
 
     return results
 
@@ -119,7 +120,7 @@ def get_player_total(
         results = Result.select(
             lambda r: r.player.user_snowflake == user_id
             and r.game.game_type.identifier == game_type_identifier
-        ).order_by(Result.submit_time)
+        ).order_by(lambda r: r.game.publish_date)
 
         if not results.first():
             return None
