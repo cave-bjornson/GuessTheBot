@@ -148,7 +148,9 @@ def get_player_total(
 
         win_rate = f"{won / played_games:.2%}"
 
-        join_date_res = select(p.join_datetime for p in Player)
+        join_date_res = select(
+            p.join_datetime for p in Player if p.user_snowflake == user_id
+        )
 
         total = PlayerTotal(
             user_id=user_id,
