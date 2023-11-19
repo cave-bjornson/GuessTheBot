@@ -60,7 +60,7 @@ gtb_group = crescent.Group("gtb")
 @client.include
 @gtb_group.child
 @crescent.hook(check_player_exists_hook)
-@crescent.command(name="synlighet")
+@crescent.command(name="synlighet", description="Var synlig/osynlig på topplistor.")
 async def toggle_visibility(ctx: crescent.Context) -> None:
     is_visible = service.toggle_player_visible(ctx.user.id)
 
@@ -75,7 +75,7 @@ async def toggle_visibility(ctx: crescent.Context) -> None:
 @client.include
 @gtb_group.child
 @crescent.hook(check_player_exists_hook)
-@crescent.command(name="deltagande")
+@crescent.command(name="deltagande", description="Dina resultat sparas/sparas ej.")
 async def toggle_active(ctx: crescent.Context) -> None:
     is_active = service.toggle_player_active(ctx.user.id)
 
@@ -91,7 +91,7 @@ async def toggle_active(ctx: crescent.Context) -> None:
 @gtb_group.child
 @crescent.hook(check_player_exists_hook)
 @crescent.hook(set_response_visibility_hook)
-@crescent.command
+@crescent.command(name="stats", description="Visar dina stats.")
 async def stats(ctx: crescent.Context) -> None:
     pt = repository.get_player_total(ctx.member.id, "gtg")
     if pt:
