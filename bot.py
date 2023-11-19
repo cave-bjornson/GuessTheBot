@@ -6,7 +6,14 @@ import crescent
 import dotenv
 import hikari
 import rootpath
-from hikari import Intents, GuildMessageCreateEvent
+from hikari import (
+    Intents,
+    GuildMessageCreateEvent,
+    Message,
+    MessageCreateEvent,
+    DMMessageCreateEvent,
+    MessageFlag,
+)
 from loguru import logger
 
 from src import repository, service
@@ -107,7 +114,9 @@ async def stats(ctx: crescent.Context) -> None:
             📅 Första spel: {pt.join_date.strftime("%y-%m-%d")}
             """
     else:
-        msg = ctx.respond("Hittar inga stats för dig, sry!.")
+        msg = ctx.respond(
+            "Hittar inga stats för dig, sry!.", ephemeral=True, ensure_message=True
+        )
 
     await ctx.respond(
         ephemeral=model.response_hidden, content=dedent(msg), ensure_message=True
@@ -139,27 +148,60 @@ async def on_message_create(event: GuildMessageCreateEvent) -> None:
     if event.channel_id != int(os.environ["GTG_CHANNEL_ID"]):
         return
 
-    logger.debug(f"Message with id {event.message.id} posted on GTG channel")
+    await guess_message_event_handler(event)
 
+
+@client.include()
+@crescent.event
+async def on_message_create(event: DMMessageCreateEvent):
+    await guess_message_event_handler(event)
+
+
+async def guess_message_event_handler(
+    event: GuildMessageCreateEvent | DMMessageCreateEvent,
+):
     if not event.is_human:
         return
+
+    event_type = type(event)
+
+    channel_name = (
+        "GTG-Channel"
+        if int(event.channel_id) == int(os.getenv("GTG_CHANNEL_ID"))
+        else event.channel_id
+    )
+
+    logger.debug(
+        "Author {} posted message with id {} {}",
+        event.author_id,
+        event.message.id,
+        f"on channel {channel_name}"
+        if event_type is GuildMessageCreateEvent
+        else "as as a DM",
+    )
 
     msg = event.message
 
     if msg.content is None:
         return
 
-    if not service.is_player_active(msg.author.id):
+    if repository.player_exists(msg.author.id) and not service.is_player_active(
+        msg.author.id
+    ):
         logger.debug(
             "Player with user id {} has opted out of result saving.", msg.author.id
         )
         return
 
-    process_message(
+    res = process_message(
         message_content=msg.content,
         message_id=int(msg.id),
         author_id=int(msg.author.id),
     )
+
+    if res and event_type is DMMessageCreateEvent:
+        for r in res:
+            await msg.respond(content=r.message)
 
 
 if __name__ == "__main__":
