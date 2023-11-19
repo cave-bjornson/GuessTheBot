@@ -5,9 +5,18 @@ from enum import StrEnum
 import snowflake
 from dotenv import load_dotenv
 from loguru import logger
-from pony.orm import db_session, Database, exists, count, select, commit, flush
+from pony.orm import db_session, Database, exists, count, select, commit, flush, desc
 
-from src.models import Player, PlayerDto, Game, GameType, Result, ResultDto, PlayerTotal
+from src.models import (
+    Player,
+    PlayerDto,
+    Game,
+    GameType,
+    Result,
+    ResultDto,
+    PlayerTotal,
+    PlayerStreak,
+)
 from src.utils import Participation
 
 load_dotenv()
@@ -36,8 +45,8 @@ def get_player(user_id: int) -> PlayerDto | None:
 
 
 @db_session
-def get_all_players() -> list[PlayerDto]:
-    query = Player.select()
+def get_all_players(active: bool = True, inactive: bool = False) -> list[PlayerDto]:
+    query = Player.select(lambda p: p.active == active or inactive)
     players = list(map(player_to_dto, query))
 
     return players
@@ -206,6 +215,38 @@ def get_player_total(
         )
 
     return total
+
+
+def get_current_streak(user_id: int, game_type_identifier: str = "gtg") -> PlayerStreak:
+    user_id = int(user_id)
+    with db_session:
+        results = Result.select(
+            lambda r: r.player.user_snowflake == user_id
+            and r.game.game_type.identifier == game_type_identifier
+        ).order_by(lambda r: desc(r.game.publish_date))
+
+        total_guesses = 0
+        current_streak = 0
+        last_submit_time = None
+
+        for res in results:
+            if last_submit_time is None:
+                last_submit_time = res.submit_time
+
+            if res.guesses == 0:
+                break
+
+            current_streak += 1
+            total_guesses += res.guesses
+
+        player_streak = PlayerStreak(
+            user_id=user_id,
+            current_streak=current_streak,
+            total_guesses=total_guesses,
+            last_submit_time=last_submit_time,
+        )
+
+    return player_streak
 
 
 def player_to_dto(player: Player) -> PlayerDto:

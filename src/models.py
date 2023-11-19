@@ -1,5 +1,6 @@
 import os
 from datetime import date, datetime
+from functools import total_ordering
 from pathlib import Path
 from typing import Optional
 
@@ -82,6 +83,21 @@ class PlayerTotal(BaseModel):
     max_streak: int
     max_loosing_streak: int
     join_date: datetime
+
+
+@total_ordering
+class PlayerStreak(BaseModel):
+    user_id: int
+    current_streak: int
+    total_guesses: int
+    last_submit_time: datetime
+
+    def __lt__(self, other):
+        return (self.current_streak, -self.total_guesses, self.last_submit_time) > (
+            other.current_streak,
+            -other.total_guesses,
+            other.last_submit_time,
+        )
 
 
 if os.getenv("ENVIRONMENT") == "dev":

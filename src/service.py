@@ -1,7 +1,12 @@
 from loguru import logger
 
 from src import repository
+from src.models import PlayerStreak
 from src.utils import Participation
+
+
+def get_all_players():
+    return repository.get_all_players(active=True, inactive=True)
 
 
 def toggle_player_visible(user_id) -> bool:
@@ -33,6 +38,19 @@ def toggle_player_active(user_id) -> bool:
     )
 
     return updated_player.active
+
+
+def generate_streak_chart() -> list[PlayerStreak]:
+    active_players = repository.get_all_players()
+    streak_results = list[PlayerStreak]()
+
+    for p in active_players:
+        if p.visible:
+            streak_results.append(repository.get_current_streak(p.user_id))
+
+    streak_results.sort()
+
+    return streak_results
 
 
 def is_player_visible(user_id: int) -> bool:
