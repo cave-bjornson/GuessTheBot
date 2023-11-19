@@ -35,6 +35,11 @@ def toggle_player_active(user_id) -> bool:
     return updated_player.active
 
 
-def get_player_visibility(user_id: int) -> bool:
+def is_player_visible(user_id: int) -> bool:
     p = repository.get_player(user_id)
     return p.visible
+
+
+def is_player_active(user_id: int) -> bool:
+    p = repository.get_player(user_id)
+    return p.active

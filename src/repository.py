@@ -19,10 +19,12 @@ snow = snowflake.Snowflake()
 
 @db_session
 def player_exists(user_id: int) -> bool:
+    user_id = int(user_id)
     return Player.exists(user_snowflake=user_id)
 
 
 def get_player(user_id: int) -> PlayerDto | None:
+    user_id = int(user_id)
     with db_session:
         p: Player = Player.get(user_snowflake=user_id)
         if p:
@@ -42,6 +44,7 @@ def get_all_players() -> list[PlayerDto]:
 
 
 def add_player(user_id: int, message_id):
+    user_id = int(user_id)
     with db_session:
         if not Player.exists(user_snowflake=user_id):
             p = Player(
@@ -60,6 +63,7 @@ def update_player(
     active: bool = None,
     join_datetime: datetime = None,
 ) -> PlayerDto:
+    user_id = int(user_id)
     with db_session:
         p = Player.get(user_snowflake=user_id)
         if visibility is not None:
@@ -78,8 +82,8 @@ def update_player(
 
 
 def get_participation_value(user_id, participation_type: Participation):
+    user_id = int(user_id)
     with db_session:
-        logger.debug(participation_type)
         pq = select(
             getattr(p, participation_type)
             for p in Player
@@ -110,6 +114,7 @@ def add_game(game_type_identifier: str, game_identifier: str, publish_date: date
 
 @db_session
 def result_exists(user_id: int, game_identifier: str):
+    user_id = int(user_id)
     return exists(
         r
         for r in Result
@@ -118,6 +123,7 @@ def result_exists(user_id: int, game_identifier: str):
 
 
 def add_result(user_id: int, message_id, game_identifier: str, guesses: int):
+    user_id = int(user_id)
     with db_session:
         p = Player.get(user_snowflake=user_id)
         g = Game.get(identifier=game_identifier)
@@ -141,6 +147,7 @@ def add_result(user_id: int, message_id, game_identifier: str, guesses: int):
 
 
 def get_all_results(limit: int, user_id: int = None):
+    user_id = int(user_id)
     sel = (lambda r: r.player.user_snowflake == user_id) if user_id else lambda x: x
     with db_session:
         query = Result.select(sel).order_by(Result.submit_time).limit(limit)

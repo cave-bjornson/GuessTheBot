@@ -1,18 +1,16 @@
+import os
 from dataclasses import dataclass
 from textwrap import dedent
-from typing import Annotated, Callable
 
 import crescent
-from crescent import Context
+import dotenv
+import hikari
+import rootpath
 from hikari import Intents, GuildMessageCreateEvent
 from loguru import logger
 
 from src import repository, service
 from src.message_processing import process_message
-import dotenv
-import hikari
-import os
-import rootpath
 
 rootpath.append()
 dotenv.load_dotenv()
@@ -38,14 +36,15 @@ async def check_player_exists_hook(ctx: crescent.Context) -> crescent.HookResult
         logger.info("Player not registered, terminating further interaction")
         await ctx.respond(
             ephemeral=True,
-            content=f"Du är inte registrerad som spelare, posta ett resultat i <#{os.getenv('GTG_CHANNEL_ID')}> för att registrera dig",
+            content=f"Du är inte registrerad som spelare, posta ett resultat i <#{os.getenv('GTG_CHANNEL_ID')}> för "
+            f"att registrera dig",
             ensure_message=True,
         )
     return crescent.HookResult(exit=not_exists)
 
 
 async def set_response_visibility_hook(ctx: crescent.Context) -> None:
-    is_hidden = not service.get_player_visibility(ctx.user.id)
+    is_hidden = not service.is_player_visible(ctx.user.id)
     if is_hidden:
         logger.info(
             "Player with user id {} is invisible, response will be hidden",
@@ -55,11 +54,45 @@ async def set_response_visibility_hook(ctx: crescent.Context) -> None:
     model.response_hidden = is_hidden
 
 
+gtb_group = crescent.Group("gtb")
+
+
 @client.include
+@gtb_group.child
+@crescent.hook(check_player_exists_hook)
+@crescent.command(name="synlighet")
+async def toggle_visibility(ctx: crescent.Context) -> None:
+    is_visible = service.toggle_player_visible(ctx.user.id)
+
+    if is_visible:
+        msg = "Du är nu synlig på topplistor."
+    else:
+        msg = "Du är nu gömd och syns inte på topplistor. Du kan fortfarande registrera resultat som vanligt (om du har valt att delta)."
+
+    await ctx.respond(msg, ensure_message=True, ephemeral=True)
+
+
+@client.include
+@gtb_group.child
+@crescent.hook(check_player_exists_hook)
+@crescent.command(name="deltagande")
+async def toggle_active(ctx: crescent.Context) -> None:
+    is_active = service.toggle_player_active(ctx.user.id)
+
+    if is_active:
+        msg = "Du har nu registrerat dig. Dina resultat sparas."
+    else:
+        msg = "Du har nu avregistrerat dig. Dina resultat sparas ej."
+
+    await ctx.respond(msg, ensure_message=True, ephemeral=True)
+
+
+@client.include
+@gtb_group.child
 @crescent.hook(check_player_exists_hook)
 @crescent.hook(set_response_visibility_hook)
 @crescent.command
-async def gtb(ctx: crescent.Context) -> None:
+async def stats(ctx: crescent.Context) -> None:
     pt = repository.get_player_total(ctx.member.id, "gtg")
     if pt:
         msg = f"""\
@@ -95,6 +128,12 @@ async def on_message_create(event: GuildMessageCreateEvent) -> None:
     msg = event.message
 
     if msg.content is None:
+        return
+
+    if not service.is_player_active(msg.author.id):
+        logger.debug(
+            "Player with user id {} has opted out of result saving.", msg.author.id
+        )
         return
 
     process_message(
