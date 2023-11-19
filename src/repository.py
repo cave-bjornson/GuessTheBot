@@ -1,27 +1,30 @@
 import asyncio
-from datetime import date
+from datetime import date, datetime
+from enum import StrEnum
 
 import snowflake
 from dotenv import load_dotenv
 from loguru import logger
-from pony.orm import db_session, Database, exists, count, select
+from pony.orm import db_session, Database, exists, count, select, commit, flush
 
 from src.models import Player, PlayerDto, Game, GameType, Result, ResultDto, PlayerTotal
+from src.utils import Participation
 
 load_dotenv()
 
 db = Database()
-
 
 snow = snowflake.Snowflake()
 
 
 @db_session
 def player_exists(user_id: int) -> bool:
+    user_id = int(user_id)
     return Player.exists(user_snowflake=user_id)
 
 
 def get_player(user_id: int) -> PlayerDto | None:
+    user_id = int(user_id)
     with db_session:
         p: Player = Player.get(user_snowflake=user_id)
         if p:
@@ -41,6 +44,7 @@ def get_all_players() -> list[PlayerDto]:
 
 
 def add_player(user_id: int, message_id):
+    user_id = int(user_id)
     with db_session:
         if not Player.exists(user_snowflake=user_id):
             p = Player(
@@ -51,6 +55,43 @@ def add_player(user_id: int, message_id):
             logger.debug("Player added with primary key {}.", p.id)
         else:
             logger.warning("Attempt to add existing player")
+
+
+def update_player(
+    user_id: int,
+    visibility: bool = None,
+    active: bool = None,
+    join_datetime: datetime = None,
+) -> PlayerDto:
+    user_id = int(user_id)
+    with db_session:
+        p = Player.get(user_snowflake=user_id)
+        if visibility is not None:
+            p.visible = visibility
+
+        if active is not None:
+            p.active = active
+
+        if join_datetime is not None:
+            p.join_datetime = join_datetime
+
+        updated_player = player_to_dto(p)
+        logger.debug("Player with primary key {} updated.", p.id)
+
+    return updated_player
+
+
+def get_participation_value(user_id, participation_type: Participation):
+    user_id = int(user_id)
+    with db_session:
+        pq = select(
+            getattr(p, participation_type)
+            for p in Player
+            if p.user_snowflake == user_id
+        )
+        p_val = pq.first()
+
+    return p_val
 
 
 @db_session
@@ -73,6 +114,7 @@ def add_game(game_type_identifier: str, game_identifier: str, publish_date: date
 
 @db_session
 def result_exists(user_id: int, game_identifier: str):
+    user_id = int(user_id)
     return exists(
         r
         for r in Result
@@ -81,6 +123,7 @@ def result_exists(user_id: int, game_identifier: str):
 
 
 def add_result(user_id: int, message_id, game_identifier: str, guesses: int):
+    user_id = int(user_id)
     with db_session:
         p = Player.get(user_snowflake=user_id)
         g = Game.get(identifier=game_identifier)
@@ -104,6 +147,7 @@ def add_result(user_id: int, message_id, game_identifier: str, guesses: int):
 
 
 def get_all_results(limit: int, user_id: int = None):
+    user_id = int(user_id)
     sel = (lambda r: r.player.user_snowflake == user_id) if user_id else lambda x: x
     with db_session:
         query = Result.select(sel).order_by(Result.submit_time).limit(limit)
@@ -148,9 +192,7 @@ def get_player_total(
 
         win_rate = f"{won / played_games:.2%}"
 
-        join_date_res = select(
-            p.join_datetime for p in Player if p.user_snowflake == user_id
-        )
+        p = Player.get(user_snowflake=user_id)
 
         total = PlayerTotal(
             user_id=user_id,
@@ -160,7 +202,7 @@ def get_player_total(
             current_streak=current_streak,
             max_streak=max_streak,
             max_loosing_streak=max_loosing_streak,
-            join_date=join_date_res.first(),
+            join_date=p.join_datetime,
         )
 
     return total
@@ -171,7 +213,7 @@ def player_to_dto(player: Player) -> PlayerDto:
         user_id=player.user_snowflake,
         join_date=player.join_datetime.astimezone().date(),
         active=player.active,
-        visible=player.active,
+        visible=player.visible,
     )
 
 
@@ -198,3 +240,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+class Participation:
+    pass

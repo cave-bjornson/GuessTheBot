@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from hikari.impl import RESTClientImpl
 from pydantic import BaseModel
 
-from src import repository
+from src import repository, service
 from src.message_processing import process_message
 from src.repository import snowflake_to_datetime
 
@@ -68,6 +68,27 @@ async def players(user_id, name):
 @click.argument("message_id")
 async def add_player(user_id, message_id):
     repository.add_player(user_id=user_id, message_id=message_id)
+
+
+@cli.command("toggle-participation")
+@make_sync
+@click.argument("user_id", type=int, required=True)
+@click.argument(
+    "participation-type", type=click.Choice(["visible", "active"]), required=True
+)
+@click.option("-n", "--name", help="Fetch and display discord username", is_flag=True)
+async def toggle_participation(user_id, participation_type, name):
+    toggle = (
+        service.toggle_player_visible
+        if participation_type == "visible"
+        else service.toggle_player_active
+    )
+    updated_participation_val = toggle(user_id=user_id)
+
+    user_display_val = await get_discord_member_name(user_id) if name else user_id
+    print(
+        f"User {user_display_val} has attribute {participation_type} set to {updated_participation_val}"
+    )
 
 
 @cli.command()
