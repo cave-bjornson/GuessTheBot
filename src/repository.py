@@ -185,9 +185,7 @@ def get_player_total(
 
         win_rate = f"{won / played_games:.2%}"
 
-        join_date_res = select(
-            p.join_datetime for p in Player if p.user_snowflake == user_id
-        )
+        p = Player.get(user_snowflake=user_id)
 
         total = PlayerTotal(
             user_id=user_id,
@@ -197,7 +195,7 @@ def get_player_total(
             current_streak=current_streak,
             max_streak=max_streak,
             max_loosing_streak=max_loosing_streak,
-            join_date=join_date_res.first(),
+            join_date=p.join_datetime,
         )
 
     return total
