@@ -114,6 +114,25 @@ async def stats(ctx: crescent.Context) -> None:
     )
 
 
+@client.include
+@gtb_group.child
+@crescent.command(name="vemärkungen", description="Visar streak-topplistan.")
+async def top_streak(ctx: crescent.Context) -> None:
+    streak_chart = service.generate_streak_chart()
+    msg = ""
+    for index, sc in enumerate(streak_chart):
+        member = await client.app.rest.fetch_member(
+            guild=int(os.getenv("SERVER_ID")), user=sc.user_id
+        )
+        msg = (
+            msg
+            + f"{index}. *Streak: {sc.current_streak}* | **{member.display_name}**"
+            + os.linesep
+        )
+
+    await ctx.respond(content=msg, ensure_message=True)
+
+
 @client.include()
 @crescent.event
 async def on_message_create(event: GuildMessageCreateEvent) -> None:

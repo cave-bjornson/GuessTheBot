@@ -58,7 +58,7 @@ async def players(user_id, name):
         await print_model(model=p, user_id=user_id, name=name)
     else:
         click.echo("Players:")
-        for p in repository.get_all_players():
+        for p in service.get_all_players():
             await print_model(model=p, user_id=p.user_id, name=name)
 
 
@@ -99,6 +99,17 @@ async def results(user_id: int, limit: int):
     click.echo("Results:")
     for r in repository.get_all_results(user_id=user_id, limit=limit):
         click.echo(r)
+
+
+@cli.command()
+@make_sync
+@click.option("-n", "--name", help="Fetch and display discord username", is_flag=True)
+async def streak_chart(name):
+    streaks = service.generate_streak_chart()
+    click.echo("Streaks")
+    for s in streaks:
+        p_name = await get_discord_member_name(s.user_id) if name else None
+        click.echo(f"{s} {p_name}")
 
 
 @cli.command(name="stats")
