@@ -168,13 +168,16 @@ def get_player_total(
 ) -> PlayerTotal | None:
     user_id = int(user_id)
     with db_session:
-        results = Result.select(
-            lambda r: r.player.user_snowflake == user_id
-            and r.game.game_type.identifier == game_type_identifier
-        ).order_by(lambda r: r.game.publish_date)
+        # results = Result.select(
+        #     lambda r: r.player.user_snowflake == user_id
+        #     and r.game.game_type.identifier == game_type_identifier
+        # ).order_by(lambda r: r.game.publish_date)
 
-        if not results.first():
-            return None
+        results = __all_games_and_player_results_query(
+            user_id=user_id,
+            game_type_identifier=game_type_identifier,
+            sort_order="DESC",
+        )
 
         played_games = 0
         won = 0
@@ -182,20 +185,30 @@ def get_player_total(
         max_streak = 0
         loosing_streak = 0
         max_loosing_streak = 0
+        last_submit_time: datetime | None = None
 
-        for res in results:
-            played_games += 1
-            if res.guesses != 0:
+        for _, submit_time, guesses in results:
+            if last_submit_time is None:
+                # This skips the first rows if player hasn't played today/for some days
+                if submit_time is None:
+                    continue
+                last_submit_time = datetime.fromisoformat(submit_time)
+
+            if submit_time is not None:
+                played_games += 1
+
+            if guesses == 0 or last_submit_time is None:
+                current_streak = 0
+                if guesses is not None:
+                    loosing_streak += 1
+                    if loosing_streak > max_loosing_streak:
+                        max_loosing_streak = loosing_streak
+            else:
                 loosing_streak = 0
                 won += 1
                 current_streak += 1
                 if current_streak > max_streak:
                     max_streak = current_streak
-            else:
-                current_streak = 0
-                loosing_streak += 1
-                if loosing_streak > max_loosing_streak:
-                    max_loosing_streak = loosing_streak
 
         win_rate = f"{won / played_games:.2%}"
 
@@ -218,19 +231,8 @@ def get_player_total(
 def get_current_streak(user_id: int, game_type_identifier: str = "gtg") -> PlayerStreak:
     user_id = int(user_id)
     with db_session:
-        results = db.execute(
-            """
-            WITH const AS (SELECT DISTINCT p.id AS player_id FROM Player p WHERE p.user_snowflake = $user_snowflake)
-            SELECT g.id, r.submit_time, (SELECT r.guesses FROM Result r WHERE r.game = g.id AND r.player = const.player_id AND r.guesses >= 0) AS guesses
-            FROM Game g, const
-            LEFT JOIN Result r ON g.id = r.game AND r.player = const.player_id
-            WHERE g.game_type = (SELECT gt.id from GameType AS gt WHERE gt.identifier = $identifier)
-            ORDER BY g.publish_date DESC
-            """,
-            {
-                "user_snowflake": user_id,
-                "identifier": game_type_identifier,
-            },
+        results = __all_games_and_player_results_query(
+            user_id, game_type_identifier, sort_order="DESC"
         )
 
         total_guesses = 0
@@ -284,6 +286,28 @@ def result_to_dto(result: Result) -> ResultDto:
 def snowflake_to_datetime(snowflake_val: int):
     snowflake_datetime, *_ = snow.parse_discord_snowflake(str(snowflake_val))
     return snowflake_datetime
+
+
+def __all_games_and_player_results_query(
+    user_id: int, game_type_identifier: str = "gtg", sort_order: str = "ASC"
+):
+    with db_session:
+        results = db.execute(
+            f"""
+            WITH const AS (SELECT DISTINCT p.id AS player_id FROM Player p WHERE p.user_snowflake = $user_snowflake)
+            SELECT g.publish_date, r.submit_time, (SELECT r.guesses FROM Result r WHERE r.game = g.id AND r.player = const.player_id AND r.guesses >= 0) AS guesses
+            FROM Game g, const
+            LEFT JOIN Result r ON g.id = r.game AND r.player = const.player_id
+            WHERE g.game_type = (SELECT gt.id from GameType AS gt WHERE gt.identifier = $identifier)
+            ORDER BY g.publish_date {sort_order}
+            """,
+            {
+                "user_snowflake": user_id,
+                "identifier": game_type_identifier,
+            },
+        )
+
+    return results
 
 
 async def main():
