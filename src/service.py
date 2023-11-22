@@ -1,3 +1,5 @@
+import asyncio
+
 from loguru import logger
 
 from src import repository
@@ -61,3 +63,11 @@ def is_player_visible(user_id: int) -> bool:
 def is_player_active(user_id: int) -> bool:
     p = repository.get_player(user_id)
     return p.active
+
+
+async def main():
+    pass
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
