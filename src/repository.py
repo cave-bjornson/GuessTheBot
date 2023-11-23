@@ -183,7 +183,7 @@ def get_player_total(
         max_loosing_streak = 0
         last_submit_time: datetime | None = None
 
-        for _, submit_time, guesses in results:
+        for _, _, submit_time, guesses in results:
             if last_submit_time is None:
                 # This skips the first rows if player hasn't played today/for some days
                 if submit_time is None:
@@ -237,7 +237,7 @@ def get_current_streak(user_id: int, game_type_identifier: str = "gtg") -> Playe
         current_streak = 0
         last_submit_time: datetime | None = None
 
-        for _, submit_time, guesses in results:
+        for _, _, submit_time, guesses in results:
             if last_submit_time is None:
                 # This skips the first rows if player hasn't played today/for some days
                 if submit_time is None:
@@ -258,6 +258,34 @@ def get_current_streak(user_id: int, game_type_identifier: str = "gtg") -> Playe
         )
 
     return player_streak
+
+
+def get_gaps_in_results(user_id: int, game_type_identifier: str = "gtg"):
+    user_id = int(user_id)
+    with db_session:
+        results = __all_games_and_player_results_query(
+            user_id, game_type_identifier, sort_order="ASC"
+        )
+
+    gaps = list()
+    gap_start = None
+    gap_end = None
+
+    for identifier, _, submit_time, guesses in results:
+        if submit_time:
+            if gap_start and gap_end:
+                if gap_start == gap_end:
+                    gaps.append(gap_start)
+                else:
+                    gaps.append((gap_start, gap_end))
+            gap_start = None
+            gap_end = None
+        else:
+            if not gap_start:
+                gap_start = identifier
+            gap_end = identifier
+
+    return gaps
 
 
 def player_to_dto(player: Player) -> PlayerDto:
@@ -289,11 +317,12 @@ def snowflake_to_datetime(snowflake_val: int):
 def __all_games_and_player_results_query(
     user_id: int, game_type_identifier: str = "gtg", sort_order: str = "ASC"
 ):
+    user_id = int(user_id)
     with db_session:
         results = db.execute(
             f"""
             WITH const AS (SELECT DISTINCT p.id AS player_id FROM Player p WHERE p.user_snowflake = $user_snowflake)
-            SELECT g.publish_date, r.submit_time, (SELECT r.guesses FROM Result r WHERE r.game = g.id AND r.player = const.player_id AND r.guesses >= 0) AS guesses
+            SELECT g.identifier, g.publish_date, r.submit_time, (SELECT r.guesses FROM Result r WHERE r.game = g.id AND r.player = const.player_id AND r.guesses >= 0) AS guesses
             FROM Game g, const
             LEFT JOIN Result r ON g.id = r.game AND r.player = const.player_id
             WHERE g.game_type = (SELECT gt.id from GameType AS gt WHERE gt.identifier = $identifier)
