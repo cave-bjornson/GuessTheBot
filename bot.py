@@ -29,7 +29,8 @@ class Model:
 
 
 bot = hikari.GatewayBot(
-    token=os.environ["TOKEN"], intents=Intents.ALL_MESSAGES | Intents.MESSAGE_CONTENT
+    token=os.environ["TOKEN"],
+    intents=Intents.ALL_MESSAGES | Intents.MESSAGE_CONTENT | Intents.GUILDS,
 )
 
 client = crescent.Client(bot, Model())
@@ -100,10 +101,20 @@ async def toggle_active(ctx: crescent.Context) -> None:
 @crescent.hook(set_response_visibility_hook)
 @crescent.command(name="stats", description="Visar dina stats.")
 async def stats(ctx: crescent.Context) -> None:
-    pt = repository.get_player_total(ctx.member.id, "gtg")
+    user_id = 0
+    name = ""
+    # Check if message is in DM. If None this is a DM.
+    if ctx.channel is None:
+        user_id = ctx.user.id
+        name = "dig"
+    else:
+        user_id = ctx.member.id
+        name = ctx.member.display_name
+
+    pt = repository.get_player_total(user_id, "gtg")
     if pt:
         msg = f"""\
-            ### Stats för *{ctx.member.display_name}*:
+            ### Stats för *{name}*:
             🔍 Spel: 🎮 GuessThe.Game
             🤔 Spelade: {pt.played_games}
             🥳 Vunna: {pt.won}

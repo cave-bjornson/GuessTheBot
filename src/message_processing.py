@@ -10,7 +10,7 @@ from src import repository
 from src.repository import game_exists
 
 gtg_pattern = re.compile(
-    r"(?P<tag>[#🔍].*GuessTheGame)?[.\s]*(?P<id_group>#(?P<id>\d+))?[.\s]*(?P<score_group>🎮\s*(?P<score>(\s*[🟥🟩🟨](\s*[🟥🟩🟨⬜⬛]){5})))",
+    r"(?P<tag>[#🔍].*GuessTheGame)?[.\s]*(?P<id_group>#(?P<id>\d+))?[.\s]*(?P<score_group>🎮\s*(?P<score>(\s*[🟥🟩🟨](\s*[🟥🟩🟨⬜⬛\uFE0F]){0,5})))",
     flags=(re.DOTALL and re.IGNORECASE),
 )
 
@@ -74,7 +74,6 @@ def process_message(
     result_list = list[ProcessResult]()
 
     for pr in pattern_res:
-        print(pr)
         process_result = ProcessResult()
 
         if not repository.player_exists(author_id):

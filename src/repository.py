@@ -1,11 +1,10 @@
 import asyncio
 from datetime import date, datetime
-from enum import StrEnum
 
 import snowflake
 from dotenv import load_dotenv
 from loguru import logger
-from pony.orm import db_session, Database, exists, count, select, commit, flush, desc
+from pony.orm import db_session, exists, select
 
 from src.models import (
     Player,
@@ -16,12 +15,11 @@ from src.models import (
     ResultDto,
     PlayerTotal,
     PlayerStreak,
+    db,
 )
 from src.utils import Participation
 
 load_dotenv()
-
-db = Database()
 
 snow = snowflake.Snowflake()
 
@@ -170,34 +168,45 @@ def get_player_total(
 ) -> PlayerTotal | None:
     user_id = int(user_id)
     with db_session:
-        results = Result.select(
-            lambda r: r.player.user_snowflake == user_id
-            and r.game.game_type.identifier == game_type_identifier
-        ).order_by(lambda r: r.game.publish_date)
-
-        if not results.first():
-            return None
+        results = __all_games_and_player_results_query(
+            user_id=user_id,
+            game_type_identifier=game_type_identifier,
+            sort_order="DESC",
+        )
 
         played_games = 0
         won = 0
-        current_streak = 0
+        streak_counter = 0
+        current_streak = None
         max_streak = 0
         loosing_streak = 0
         max_loosing_streak = 0
+        last_submit_time: datetime | None = None
 
-        for res in results:
-            played_games += 1
-            if res.guesses != 0:
+        for _, submit_time, guesses in results:
+            if last_submit_time is None:
+                # This skips the first rows if player hasn't played today/for some days
+                if submit_time is None:
+                    continue
+                last_submit_time = datetime.fromisoformat(submit_time)
+
+            if submit_time is not None:
+                played_games += 1
+
+            if guesses == 0 or submit_time is None:
+                if current_streak is None:
+                    current_streak = streak_counter
+                streak_counter = 0
+                if guesses is not None:
+                    loosing_streak += 1
+                    if loosing_streak > max_loosing_streak:
+                        max_loosing_streak = loosing_streak
+            else:
                 loosing_streak = 0
                 won += 1
-                current_streak += 1
-                if current_streak > max_streak:
-                    max_streak = current_streak
-            else:
-                current_streak = 0
-                loosing_streak += 1
-                if loosing_streak > max_loosing_streak:
-                    max_loosing_streak = loosing_streak
+                streak_counter += 1
+                if streak_counter > max_streak:
+                    max_streak = streak_counter
 
         win_rate = f"{won / played_games:.2%}"
 
@@ -220,24 +229,26 @@ def get_player_total(
 def get_current_streak(user_id: int, game_type_identifier: str = "gtg") -> PlayerStreak:
     user_id = int(user_id)
     with db_session:
-        results = Result.select(
-            lambda r: r.player.user_snowflake == user_id
-            and r.game.game_type.identifier == game_type_identifier
-        ).order_by(lambda r: desc(r.game.publish_date))
+        results = __all_games_and_player_results_query(
+            user_id, game_type_identifier, sort_order="DESC"
+        )
 
         total_guesses = 0
         current_streak = 0
-        last_submit_time = None
+        last_submit_time: datetime | None = None
 
-        for res in results:
+        for _, submit_time, guesses in results:
             if last_submit_time is None:
-                last_submit_time = res.submit_time
+                # This skips the first rows if player hasn't played today/for some days
+                if submit_time is None:
+                    continue
+                last_submit_time = datetime.fromisoformat(submit_time)
 
-            if res.guesses == 0:
+            if guesses == 0 or guesses is None:
                 break
 
             current_streak += 1
-            total_guesses += res.guesses
+            total_guesses += guesses
 
         player_streak = PlayerStreak(
             user_id=user_id,
@@ -275,13 +286,31 @@ def snowflake_to_datetime(snowflake_val: int):
     return snowflake_datetime
 
 
+def __all_games_and_player_results_query(
+    user_id: int, game_type_identifier: str = "gtg", sort_order: str = "ASC"
+):
+    with db_session:
+        results = db.execute(
+            f"""
+            WITH const AS (SELECT DISTINCT p.id AS player_id FROM Player p WHERE p.user_snowflake = $user_snowflake)
+            SELECT g.publish_date, r.submit_time, (SELECT r.guesses FROM Result r WHERE r.game = g.id AND r.player = const.player_id AND r.guesses >= 0) AS guesses
+            FROM Game g, const
+            LEFT JOIN Result r ON g.id = r.game AND r.player = const.player_id
+            WHERE g.game_type = (SELECT gt.id from GameType AS gt WHERE gt.identifier = $identifier)
+            ORDER BY g.publish_date {sort_order}
+            """,
+            {
+                "user_snowflake": user_id,
+                "identifier": game_type_identifier,
+            },
+        )
+
+    return results
+
+
 async def main():
     pass
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-class Participation:
-    pass
