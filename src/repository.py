@@ -183,7 +183,7 @@ def get_player_total(
         max_loosing_streak = 0
         last_submit_time: datetime | None = None
 
-        for _, submit_time, guesses in results:
+        for _, _, submit_time, guesses in results:
             if last_submit_time is None:
                 # This skips the first rows if player hasn't played today/for some days
                 if submit_time is None:
@@ -237,7 +237,7 @@ def get_current_streak(user_id: int, game_type_identifier: str = "gtg") -> Playe
         current_streak = 0
         last_submit_time: datetime | None = None
 
-        for _, submit_time, guesses in results:
+        for _, _, submit_time, guesses in results:
             if last_submit_time is None:
                 # This skips the first rows if player hasn't played today/for some days
                 if submit_time is None:
