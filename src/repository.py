@@ -168,11 +168,6 @@ def get_player_total(
 ) -> PlayerTotal | None:
     user_id = int(user_id)
     with db_session:
-        # results = Result.select(
-        #     lambda r: r.player.user_snowflake == user_id
-        #     and r.game.game_type.identifier == game_type_identifier
-        # ).order_by(lambda r: r.game.publish_date)
-
         results = __all_games_and_player_results_query(
             user_id=user_id,
             game_type_identifier=game_type_identifier,
@@ -181,7 +176,8 @@ def get_player_total(
 
         played_games = 0
         won = 0
-        current_streak = 0
+        streak_counter = 0
+        current_streak = None
         max_streak = 0
         loosing_streak = 0
         max_loosing_streak = 0
@@ -197,8 +193,10 @@ def get_player_total(
             if submit_time is not None:
                 played_games += 1
 
-            if guesses == 0 or last_submit_time is None:
-                current_streak = 0
+            if guesses == 0 or submit_time is None:
+                if current_streak is None:
+                    current_streak = streak_counter
+                streak_counter = 0
                 if guesses is not None:
                     loosing_streak += 1
                     if loosing_streak > max_loosing_streak:
@@ -206,9 +204,9 @@ def get_player_total(
             else:
                 loosing_streak = 0
                 won += 1
-                current_streak += 1
-                if current_streak > max_streak:
-                    max_streak = current_streak
+                streak_counter += 1
+                if streak_counter > max_streak:
+                    max_streak = streak_counter
 
         win_rate = f"{won / played_games:.2%}"
 
