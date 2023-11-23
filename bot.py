@@ -136,6 +136,24 @@ async def stats(ctx: crescent.Context) -> None:
 
 @client.include
 @gtb_group.child
+@crescent.hook(check_player_exists_hook)
+@crescent.command(name="saknade", description="Saknade resultat.")
+async def missing(ctx: crescent.Context) -> None:
+    dm_channel = await ctx.user.fetch_dm_channel()
+
+    msg = ""
+    for gap in repository.get_gaps_in_results(ctx.user.id):
+        msg += (f"{gap[0]} - {gap[1]}" if type(gap) is tuple else gap) + os.linesep
+
+    await dm_channel.send(msg)
+
+    await ctx.respond(
+        "Saknade resultat skickade i dm", ephemeral=True, ensure_message=True
+    )
+
+
+@client.include
+@gtb_group.child
 @crescent.command(name="vemärkungen", description="Visar streak-topplistan.")
 async def top_streak(ctx: crescent.Context) -> None:
     streak_chart = service.generate_streak_chart()
